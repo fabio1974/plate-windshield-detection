@@ -1,0 +1,14 @@
+path: /home/fbarros/PycharmProjects/plate-windshield-detection/datasets/windshield   # raiz do dataset
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['windshield']
+
+roboflow:
+  workspace: fabioflow
+  project: windshield-detection-izxlh
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/fabioflow/windshield-detection-izxlh/dataset/1
