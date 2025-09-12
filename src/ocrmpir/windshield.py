@@ -1,4 +1,7 @@
-# windshield.py – detecção global (sem MIRA/Header)
+"""
+windshield.py – global detection (without MIRA/Header)
+"""
+
 from __future__ import annotations
 
 import os
@@ -68,8 +71,8 @@ def _area(xyxy):
 
 def detect_windshield_rect(img: np.ndarray) -> Rect | None:
     """
-    Detecta o melhor para-brisa na IMAGEM TODA.
-    Retorna (x1,y1,x2,y2) absoluto ou None.
+    Detects the best windshield in the WHOLE IMAGE.
+    Returns absolute (x1, y1, x2, y2) or None.
     """
     H, W = img.shape[:2]
     if H == 0 or W == 0:
@@ -95,7 +98,7 @@ def detect_windshield_rect(img: np.ndarray) -> Rect | None:
     confs = r.boxes.conf.cpu().numpy()
     clss = r.boxes.cls.cpu().numpy().astype(int) if r.boxes.cls is not None else None
 
-    # filtra por classe, área mínima, ordena por confiança->área
+    # filter by class, minimum area, sort by confidence->area
     cand = []
     min_area = _WS["min_area_frac"] * (W * H)
     names = getattr(model.model, "names", None) or getattr(model, "names", None)
@@ -113,12 +116,12 @@ def detect_windshield_rect(img: np.ndarray) -> Rect | None:
     if not cand:
         return None
 
-    # ordena: maior confiança, depois maior área
+    # sort: highest confidence, then largest area
     cand.sort(key=lambda t: (t[0], t[1]), reverse=True)
     best = cand[0][2]
     x1, y1, x2, y2 = best
 
-    # padding e clipping
+    # padding and clipping
     x1 -= _WS["pad_px"]
     y1 -= _WS["pad_px"]
     x2 += _WS["pad_px"]
@@ -126,13 +129,16 @@ def detect_windshield_rect(img: np.ndarray) -> Rect | None:
     return _clip_rect(x1, y1, x2, y2, W, H)
 
 
-# compat: se seu código antigo ainda chama esta função, redireciona para global
+# compat: if your old code still calls this function, redirect to global
 def detect_windshield_rect_in_mira(img: np.ndarray, mira_rect: Rect) -> Rect | None:
-    """Mantido por compatibilidade. Agora ignora a MIRA e usa a imagem inteira."""
+    """Kept for compatibility. Now ignores MIRA and uses the whole image."""
     return detect_windshield_rect(img)
 
 
 def draw_rect(img: np.ndarray, rect: Rect, color=(255, 0, 255), thickness=2):
+    """
+    Draws a rectangle on the image given a rect tuple.
+    """
     if not rect:
         return
     x1, y1, x2, y2 = rect

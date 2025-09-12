@@ -12,15 +12,16 @@ import numpy as np
 from paddleocr import PaddleOCR
 from ultralytics import YOLO
 
-# =================== FLAGS (iguais às do seu arquivo original) ===================
-DEBUG = False  # True = salva variações de crop
-SAVE_FAILED = True  # salva crops quando falha / baixa confiança
-LOW_CONF = 0.60  # limiar de confiança baixa p/ "falha"
-SAVE_CROPS = False  # False = nunca salvar crops
-SAVE_ANNOTATED = False  # True = salvar *_annotated.png
+# =================== FLAGS (same as your original file) ===================
+DEBUG = False  # True = saves crop variations
+SAVE_FAILED = True  # saves crops when it fails / low confidence
+LOW_CONF = 0.60  # low confidence threshold for "failure"
+SAVE_CROPS = False  # False = never save crops
+SAVE_ANNOTATED = False  # True = save *_annotated.png
 # ================================================================================
 
-# ---------- Pesos YOLO (placa) ----------
+
+# ---------- YOLO Weights (license plate) ----------
 DETECTOR_WEIGHTS = "license_plate_detector.pt"
 CONF_THRES = 0.25
 IOU_THRES = 0.50
@@ -32,7 +33,8 @@ ocr = PaddleOCR(lang="latin", det=False, rec=True, cls=False)
 
 logging.getLogger("ppocr").setLevel(logging.ERROR)
 
-# ---------- padrões de placa BR ----------
+
+# ---------- Brazilian license plate patterns ----------
 PLATE_OLD = re.compile(r"\b[A-Z]{3}\d{4}\b")  # ABC1234
 PLATE_MERC = re.compile(r"\b[A-Z]{3}\d[A-Z]\d{2}\b")  # ABC1D23
 
@@ -153,13 +155,13 @@ def _best_plate_from_crop(
 
 def detect_and_read_plate(image_path: str) -> tuple[str | None, float, str | None]:
     """
-    Lê a imagem **sem qualquer máscara**, detecta placa (YOLO),
-    roda OCR no crop do ORIGINAL e retorna (placa, confiança, caminho_do_annotated_ou_None).
-    Respeita as FLAGS declaradas acima.
+    Reads the image **without any mask**, detects the plate (YOLO),
+    runs OCR on the crop from the ORIGINAL and returns (plate, confidence, annotated_path_or_None).
+    Respects the FLAGS declared above.
     """
     img_orig = cv2.imread(image_path)
     if img_orig is None:
-        raise FileNotFoundError(f"Não consegui abrir a imagem: {image_path}")
+        raise FileNotFoundError(f"Could not open image: {image_path}")
 
     img_for_detect = img_orig  # sem máscara
 
