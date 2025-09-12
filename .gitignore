@@ -30,3 +30,7 @@ Thumbs.db
 htmlcov/
 .tox/
 .pytest_cache/
+
+# leave out folders .idea and datasets
+!/.idea/
+!/datasets/
