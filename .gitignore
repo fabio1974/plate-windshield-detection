@@ -1,0 +1,32 @@
+# Ignore virtual environment directories
+.venv/
+venv/
+ENV/
+env/
+
+# Ignore Python package build artifacts
+*.egg-info/
+dist/
+build/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ignore log and temporary files
+*.log
+*.tmp
+
+# Ignore PyCharm project settings
+.idea/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore test and coverage outputs
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
