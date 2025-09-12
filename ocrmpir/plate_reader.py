@@ -1,44 +1,48 @@
 import os
-os.environ["GLOG_minloglevel"] = "3"
-os.environ["FLAGS_logtostderr"] = "1"
 
+os.environ["GLOG_MINLOGLEVEL"] = "3"
+os.environ["FLAGS_LOGTOSTDERR"] = "1"
+
+import logging
 import re
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
-from typing import Tuple
-from ultralytics import YOLO
 from paddleocr import PaddleOCR
+from ultralytics import YOLO
 
 # =================== FLAGS (iguais às do seu arquivo original) ===================
-DEBUG = False                  # True = salva variações de crop
-SAVE_FAILED = True             # salva crops quando falha / baixa confiança
-LOW_CONF = 0.60                # limiar de confiança baixa p/ "falha"
-SAVE_CROPS = False             # False = nunca salvar crops
-SAVE_ANNOTATED = False         # True = salvar *_annotated.png
+DEBUG = False  # True = salva variações de crop
+SAVE_FAILED = True  # salva crops quando falha / baixa confiança
+LOW_CONF = 0.60  # limiar de confiança baixa p/ "falha"
+SAVE_CROPS = False  # False = nunca salvar crops
+SAVE_ANNOTATED = False  # True = salvar *_annotated.png
 # ================================================================================
 
 # ---------- Pesos YOLO (placa) ----------
 DETECTOR_WEIGHTS = "license_plate_detector.pt"
 CONF_THRES = 0.25
-IOU_THRES  = 0.50
-PAD        = 6
+IOU_THRES = 0.50
+PAD = 6
 
 # ---------- OCR ----------
 ocr = PaddleOCR(lang="latin", det=False, rec=True, cls=False)
 
-import logging
+
 logging.getLogger("ppocr").setLevel(logging.ERROR)
 
 # ---------- padrões de placa BR ----------
-PLATE_OLD  = re.compile(r"\b[A-Z]{3}\d{4}\b")        # ABC1234
-PLATE_MERC = re.compile(r"\b[A-Z]{3}\d[A-Z]\d{2}\b") # ABC1D23
+PLATE_OLD = re.compile(r"\b[A-Z]{3}\d{4}\b")  # ABC1234
+PLATE_MERC = re.compile(r"\b[A-Z]{3}\d[A-Z]\d{2}\b")  # ABC1D23
+
 
 # ---------------- utils OCR -----------------
 def normalize(text: str) -> str:
     t = text.strip().upper().replace(" ", "").replace("-", "")
-    swaps = {"0":"O","1":"I","5":"S","8":"B","Q":"O"}
+    swaps = {"0": "O", "1": "I", "5": "S", "8": "B", "Q": "O"}
     return "".join(swaps.get(c, c) for c in t)
+
 
 def strict_correction(t: str) -> str | None:
     t = normalize(t)
@@ -48,23 +52,29 @@ def strict_correction(t: str) -> str | None:
         return t
     chars = list(t)
     for i in range(len(chars)):
-        if i in (0,1,2) and chars[i].isdigit():
-            chars[i] = {"0":"O","1":"I","5":"S","8":"B"}.get(chars[i], chars[i])
-        if i in (3,4,5,6) and chars[i].isalpha():
-            chars[i] = {"O":"0","Q":"0","D":"0","B":"8","I":"1","S":"5"}.get(chars[i], chars[i])
+        if i in (0, 1, 2) and chars[i].isdigit():
+            chars[i] = {"0": "O", "1": "I", "5": "S", "8": "B"}.get(chars[i], chars[i])
+        if i in (3, 4, 5, 6) and chars[i].isalpha():
+            chars[i] = {"O": "0", "Q": "0", "D": "0", "B": "8", "I": "1", "S": "5"}.get(
+                chars[i], chars[i]
+            )
     t2 = "".join(chars)
     if PLATE_OLD.fullmatch(t2) or PLATE_MERC.fullmatch(t2):
         return t2
     return None
 
-def _maybe_save(tag: str, img: np.ndarray, base_dir: Path | None, idx: int, force: bool=False):
+
+def _maybe_save(tag: str, img: np.ndarray, base_dir: Path | None, idx: int, force: bool = False):
     if not SAVE_CROPS or base_dir is None:
         return
     if DEBUG or force:
         base_dir.mkdir(exist_ok=True, parents=True)
         cv2.imwrite(str(base_dir / f"crop_{idx:02d}_{tag}.png"), img)
 
-def _best_plate_from_crop(crop: np.ndarray, save_dir: Path | None = None, idx: int = 0) -> tuple[str | None, float]:
+
+def _best_plate_from_crop(
+    crop: np.ndarray, save_dir: Path | None = None, idx: int = 0
+) -> tuple[str | None, float]:
     def run_once(mat):
         recs = ocr.ocr(mat, cls=False) or []
         best, best_conf = None, 0.0
@@ -76,7 +86,11 @@ def _best_plate_from_crop(crop: np.ndarray, save_dir: Path | None = None, idx: i
                     continue
                 if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str):
                     txt, conf = item
-                elif isinstance(item, (list, tuple)) and len(item) >= 2 and isinstance(item[1], (list, tuple)):
+                elif (
+                    isinstance(item, (list, tuple))
+                    and len(item) >= 2
+                    and isinstance(item[1], (list, tuple))
+                ):
                     try:
                         _, (txt, conf) = item
                     except Exception:
@@ -84,7 +98,9 @@ def _best_plate_from_crop(crop: np.ndarray, save_dir: Path | None = None, idx: i
                 else:
                     continue
                 cand = strict_correction(txt) or normalize(txt)
-                if (PLATE_OLD.fullmatch(cand) or PLATE_MERC.fullmatch(cand)) and float(conf) > best_conf:
+                if (PLATE_OLD.fullmatch(cand) or PLATE_MERC.fullmatch(cand)) and float(
+                    conf
+                ) > best_conf:
                     best, best_conf = cand, float(conf)
         return best, best_conf
 
@@ -93,29 +109,30 @@ def _best_plate_from_crop(crop: np.ndarray, save_dir: Path | None = None, idx: i
     crop3 = cv2.resize(crop0, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
 
     def unsharp(img, k=0.8):
-        blur = cv2.GaussianBlur(img, (0,0), 2.0)
-        return cv2.addWeighted(img, 1+k, blur, -k, 0)
+        blur = cv2.GaussianBlur(img, (0, 0), 2.0)
+        return cv2.addWeighted(img, 1 + k, blur, -k, 0)
 
     def binarize(img):
         g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         g = clahe.apply(g)
-        _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+        _, th = cv2.threshold(g, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         return cv2.cvtColor(th, cv2.COLOR_GRAY2BGR)
 
     def adapt(img):
         g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         g = cv2.bilateralFilter(g, 9, 75, 75)
-        th = cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                   cv2.THRESH_BINARY, 25, 10)
+        th = cv2.adaptiveThreshold(
+            g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 25, 10
+        )
         return cv2.cvtColor(th, cv2.COLOR_GRAY2BGR)
 
     variants = [
-        ("raw",   crop0),
-        ("x2",    crop2),
-        ("x3",    crop3),
+        ("raw", crop0),
+        ("x2", crop2),
+        ("x3", crop3),
         ("sharp", unsharp(crop2)),
-        ("otsu",  binarize(crop2)),
+        ("otsu", binarize(crop2)),
         ("adapt", adapt(crop2)),
     ]
 
@@ -132,6 +149,7 @@ def _best_plate_from_crop(crop: np.ndarray, save_dir: Path | None = None, idx: i
             _maybe_save(f"FAIL_{tag}", imgv, save_dir, idx, force=True)
 
     return best, best_conf
+
 
 def detect_and_read_plate(image_path: str) -> tuple[str | None, float, str | None]:
     """
@@ -187,8 +205,15 @@ def detect_and_read_plate(image_path: str) -> tuple[str | None, float, str | Non
         if SAVE_ANNOTATED and annotated is not None:
             color = (0, 255, 0) if plate else (0, 0, 255)
             cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(annotated, f"{plate or '??'} {conf:.2f}",
-                        (x1, max(0, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+            cv2.putText(
+                annotated,
+                f"{plate or '??'} {conf:.2f}",
+                (x1, max(0, y1 - 5)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                color,
+                2,
+            )
 
     out_path = None
     if SAVE_ANNOTATED and annotated is not None:

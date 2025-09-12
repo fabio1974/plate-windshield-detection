@@ -1,14 +1,17 @@
-import os, sys, glob
+import glob
+import sys
 from pathlib import Path
+
 import cv2
+
+import ocrmpir.plate_reader as pr
 
 # pacote
 from ocrmpir.windshield import (
-    set_windshield_params,
     detect_windshield_rect,
     draw_rect,
+    set_windshield_params,
 )
-import ocrmpir.plate_reader as pr
 
 
 def process_image(path: str, draw_ws: bool = True, save_annotated: bool = True):
@@ -48,17 +51,18 @@ if __name__ == "__main__":
         conf=0.25,
         iou=0.45,
         imgsz=640,
-        device=None,          # ou "cuda"
+        device=None,  # ou "cuda"
         pad_px=2,
-        min_area_frac=0.01
+        min_area_frac=0.01,
     )
 
     folder = "/mpir/origem"
     if len(sys.argv) > 1 and sys.argv[1].lower().endswith((".jpg", ".jpeg", ".png")):
         imgs = [sys.argv[1]]
     else:
-        imgs = sorted(glob.glob(str(Path(folder) / "*.jpg")) +
-                      glob.glob(str(Path(folder) / "*.JPG")))
+        imgs = sorted(
+            glob.glob(str(Path(folder) / "*.jpg")) + glob.glob(str(Path(folder) / "*.JPG"))
+        )
 
     if not imgs:
         print(f"Nenhuma imagem encontrada em {folder}")
@@ -68,6 +72,8 @@ if __name__ == "__main__":
     for p in imgs:
         try:
             plate, conf, out = process_image(p, draw_ws=True, save_annotated=True)
-            print(f"{Path(p).name} -> Placa: {plate} | Confiança: {conf:.2f} | Preview: {out or 'não salvo'}")
+            print(
+                f"{Path(p).name} -> Placa: {plate} | Confiança: {conf:.2f} | Preview: {out or 'não salvo'}"
+            )
         except Exception as e:
             print(f"{Path(p).name} -> ERRO: {e}")
