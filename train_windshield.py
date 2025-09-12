@@ -1,7 +1,9 @@
 # train_windshield.py
-import os
 import argparse
+import os
+
 from ultralytics import YOLO
+
 
 def parse_args():
     p = argparse.ArgumentParser("Treino YOLOv8 - Windshield")
@@ -10,7 +12,9 @@ def parse_args():
         default="datasets/windshield/data.yaml",
         help="caminho para o data.yaml exportado do Roboflow",
     )
-    p.add_argument("--model", default="yolov8n.pt", help="modelo base (yolov8n.pt | yolov8s.pt | ...)")
+    p.add_argument(
+        "--model", default="yolov8n.pt", help="modelo base (yolov8n.pt | yolov8s.pt | ...)"
+    )
     p.add_argument("--epochs", type=int, default=100, help="nº de épocas")
     p.add_argument("--imgsz", type=int, default=640, help="tamanho da imagem")
     p.add_argument("--batch", type=int, default=16, help="batch size")
@@ -22,12 +26,14 @@ def parse_args():
     p.add_argument("--seed", type=int, default=42, help="random seed")
     return p.parse_args()
 
+
 def main():
     args = parse_args()
 
     # Detecta automaticamente o device
     try:
         import torch
+
         has_cuda = torch.cuda.is_available() and torch.cuda.device_count() > 0
     except Exception:
         has_cuda = False
@@ -53,7 +59,7 @@ def main():
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
-        device=args.device,     # agora é "0" (GPU) ou "cpu"
+        device=args.device,  # agora é "0" (GPU) ou "cpu"
         workers=args.workers,
         project=args.project,
         name=args.name,
