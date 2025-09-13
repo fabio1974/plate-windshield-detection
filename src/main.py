@@ -1,8 +1,10 @@
-import base64
+import glob
+from pathlib import Path
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 import ocrmpir.plate_reader as pr
@@ -23,14 +25,111 @@ class PlateResponse(BaseModel):
     plate: str | None
     confidence: float | None
     windshield: list | None
-    annotated_path: str | None
+
+
+file_dependency = File(...)
+
+
+# New endpoint: accept image as bytes (multipart/form-data)
+@app.post("/detect", response_model=PlateResponse)
+async def detect_plate_bytes(file: UploadFile = file_dependency):
+    try:
+        contents = await file.read()
+        img_array = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+        if img_array is None:
+            raise ValueError("Could not decode image")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+    # Optimized: no disk I/O for /detect
+    plate, conf = pr.detect_and_read_plate_array(img_array)
+    rect = detect_windshield_rect(img_array)
+    return PlateResponse(
+        plate=plate,
+        confidence=conf,
+        windshield=[int(x) for x in rect] if rect else None,
+    )
+
+
+# New endpoint: receive image as bytes and return annotated image as bytes
+@app.post("/detect_image")
+async def annotate(file: UploadFile = file_dependency):
+    try:
+        contents = await file.read()
+        img_array = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
+        if img_array is None:
+            raise ValueError("Could not decode image")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
+    # Process and annotate
+    old_flag = pr.SAVE_ANNOTATED
+    pr.SAVE_ANNOTATED = False
+    try:
+        _plate, _conf, rect, annotated_path = process_image_array(img_array)
+        if annotated_path:
+            annotated = cv2.imread(annotated_path)
+            if annotated is None:
+                annotated = img_array.copy()
+        else:
+            annotated = img_array.copy()
+        # Guarantee same dimensions as original
+        if annotated.shape[:2] != img_array.shape[:2]:
+            annotated = cv2.resize(
+                annotated, (img_array.shape[1], img_array.shape[0]), interpolation=cv2.INTER_LINEAR
+            )
+        if rect:
+            draw_rect(annotated, rect, color=(255, 0, 255), thickness=2)
+    finally:
+        pr.SAVE_ANNOTATED = old_flag
+    _, img_encoded = cv2.imencode(".png", annotated)
+    return Response(content=img_encoded.tobytes(), media_type="image/png")
+
+
+# Batch annotation endpoint for testing
+@app.get("/detect_batch")
+def detect_batch():
+    folder = "/mpir/origem"
+    exts = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
+    files = []
+    for ext in exts:
+        files.extend(glob.glob(str(Path(folder) / f"*{ext}")))
+    log = []
+    for img_path in sorted(files):
+        try:
+            img = cv2.imread(img_path)
+            plate, conf, rect, annotated_path = process_image_array(img)
+            if annotated_path:
+                annotated = cv2.imread(annotated_path)
+                if annotated is None:
+                    annotated = img.copy()
+            else:
+                annotated = img.copy()
+            # Guarantee same dimensions as original
+            if annotated.shape[:2] != img.shape[:2]:
+                annotated = cv2.resize(
+                    annotated, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR
+                )
+            if rect:
+                draw_rect(annotated, rect, color=(255, 0, 255), thickness=2)
+            annotated_name = str(Path(img_path).with_suffix("").name) + "_annotated.jpg"
+            annotated_path_final = str(Path(img_path).parent / annotated_name)
+            cv2.imwrite(annotated_path_final, annotated)
+            print(f"Processed {Path(img_path).name} -> {annotated_name}")
+            log.append(
+                {
+                    "file": Path(img_path).name,
+                    "plate": plate,
+                    "confidence": conf,
+                    "windshield": [int(x) for x in rect] if rect else None,
+                }
+            )
+        except Exception as e:
+            print(f"Error processing {Path(img_path).name}: {e}")
+            log.append({"file": Path(img_path).name, "error": str(e)})
+    return JSONResponse(content=log)
 
 
 def process_image_array(img: "np.ndarray"):
-    """
-    Detects the license plate and windshield from an image array.
-    Returns: plate, confidence, windshield_rect (or None), annotated_path (or None)
-    """
     old_flag = pr.SAVE_ANNOTATED
     pr.SAVE_ANNOTATED = True
     annotated_path = None
@@ -55,29 +154,7 @@ def process_image_array(img: "np.ndarray"):
     return plate, conf, rect, annotated_path
 
 
-@app.post("/detect", response_model=PlateResponse)
-def detect_plate(req: PlateRequest):
-    try:
-        img_bytes = base64.b64decode(req.image_base64)
-        img_array = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
-        if img_array is None:
-            raise ValueError("Could not decode image")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image data: {e}")
-    plate, conf, rect, annotated_path = process_image_array(img_array)
-    return PlateResponse(
-        plate=plate,
-        confidence=conf,
-        windshield=[int(x) for x in rect] if rect else None,
-        annotated_path=annotated_path,
-    )
-
-
 def process_image(path: str, draw_ws: bool = True, save_annotated: bool = True):
-    """
-    1) Detects the license plate normally (without masking header/target).
-    2) Detects the windshield in the entire image and draws the rectangle.
-    """
     old_flag = pr.SAVE_ANNOTATED
     pr.SAVE_ANNOTATED = save_annotated
     try:

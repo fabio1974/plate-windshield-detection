@@ -159,7 +159,9 @@ def detect_and_read_plate(image_path: str) -> tuple[str | None, float, str | Non
     runs OCR on the crop from the ORIGINAL and returns (plate, confidence, annotated_path_or_None).
     Respects the FLAGS declared above.
     """
+
     img_orig = cv2.imread(image_path)
+
     if img_orig is None:
         raise FileNotFoundError(f"Could not open image: {image_path}")
 
@@ -223,3 +225,46 @@ def detect_and_read_plate(image_path: str) -> tuple[str | None, float, str | Non
         cv2.imwrite(out_path, annotated)
 
     return best_global, best_conf, out_path
+
+
+# Optimized: detect plate from numpy array (no disk I/O)
+def detect_and_read_plate_array(img_orig: np.ndarray) -> tuple[str | None, float]:
+    """
+    Detects the plate (YOLO) and runs OCR on the crop from the ORIGINAL image array.
+    Returns (plate, confidence).
+    No disk I/O, no annotated image.
+    """
+    if img_orig is None:
+        raise ValueError("Input image is None")
+
+    img_for_detect = img_orig
+    model = YOLO(DETECTOR_WEIGHTS)
+    res = model.predict(img_for_detect, conf=CONF_THRES, iou=IOU_THRES, verbose=False)[0]
+
+    detect_names_dynamic = {n.lower() for n in res.names.values() if "plate" in n.lower()}
+    accepted_names = detect_names_dynamic or {"license-plate", "plate", "placa"}
+
+    boxes = []
+    boxes_obj = getattr(res, "boxes", None)
+    if boxes_obj is not None and len(boxes_obj) > 0:
+        for b in boxes_obj:
+            cls_id = int(b.cls[0].item())
+            name = res.names.get(cls_id, str(cls_id)).lower()
+            if (name in accepted_names) or ("plate" in name):
+                boxes.append(b)
+        if not boxes:
+            boxes = [max(boxes_obj, key=lambda z: float(z.conf[0]))]
+
+    best_global, best_conf = None, 0.0
+    h, w = img_for_detect.shape[:2]
+    for _i, b in enumerate(boxes):
+        x1, y1, x2, y2 = map(int, b.xyxy[0].tolist())
+        x1, y1 = max(0, x1 - PAD), max(0, y1 - PAD)
+        x2, y2 = min(w, x2 + PAD), min(h, y2 + PAD)
+
+        crop = img_orig[y1:y2, x1:x2]
+        plate, conf = _best_plate_from_crop(crop)
+        if plate and conf > best_conf:
+            best_global, best_conf = plate, conf
+
+    return best_global, best_conf

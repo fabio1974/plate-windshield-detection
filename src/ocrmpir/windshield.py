@@ -129,12 +129,6 @@ def detect_windshield_rect(img: np.ndarray) -> Rect | None:
     return _clip_rect(x1, y1, x2, y2, W, H)
 
 
-# compat: if your old code still calls this function, redirect to global
-def detect_windshield_rect_in_mira(img: np.ndarray, mira_rect: Rect) -> Rect | None:
-    """Kept for compatibility. Now ignores MIRA and uses the whole image."""
-    return detect_windshield_rect(img)
-
-
 def draw_rect(img: np.ndarray, rect: Rect, color=(255, 0, 255), thickness=2):
     """
     Draws a rectangle on the image given a rect tuple.
